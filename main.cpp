@@ -3,32 +3,46 @@
 #include <stdio.h>
 #include <algorithm>
 #include <vector>
+#include <chrono>
+
+const bool PRINT_TIMES = true;
+
+long int to_millis(auto input) {
+	return std::chrono::duration_cast<std::chrono::milliseconds>(input).count();
+}
+
+std::chrono::system_clock::time_point myclock() {
+	return std::chrono::system_clock::now();
+}
 
 class Item {
 public:
 
-	int getIndex() {return i;}
-	int getWeight() {return w;}
-	int getValue() {return v;}
-	int getMaxCount(int knapsackCapacity) {
+	int getIndex() const {return i;}
+	int getWeight() const {return w;}
+	int getValue() const {return v;}
+	int getMaxCount(int knapsackCapacity) const {
 		return knapsackCapacity/getWeight() + 1;
 	}
-	float getDensity() {
-		return (float)(getValue()) / getWeight();
-	}
-
+	float getDensity() const {return density;}
+	
 	Item(int index, int value, int weight)
-		: i(index), v(value), w(weight)
+		: i(index), v(value), w(weight), density((float)(value)/weight)
 		{}
 
 	Item()
-		: i(-1), v(-1), w(-1)
+		: i(-1), v(-1), w(-1), density(0)
 		{}
 private:
 	int i;
 	int w;
 	int v;
+	float density;
 };
+
+bool compare(const Item& lhs, const Item& rhs) {
+	return lhs.getDensity() < rhs.getDensity();
+}
 
 
 std::vector<Item> items;
@@ -54,6 +68,9 @@ void readInput() {
 
 	// Put the greatest item up front
 	iter_swap(items.begin(), items.begin() + maxCountIdx);
+	
+	// Sort by density
+	std::sort(items.begin() + 1, items.end(), compare);
 }
 
 void knapsack(int i, int value, int weight) {
@@ -81,6 +98,8 @@ void knapsack(int i, int value, int weight) {
 }
 
 int main() {
+	auto begin = myclock();
+	
 	int world_size;
 	int rank;
 	// Init MPI
@@ -96,17 +115,29 @@ int main() {
 	if(rank != 0)
 		items.resize(itemCount);
 	MPI_Bcast(&items[0], items.size()*sizeof(Item), MPI_BYTE, 0, MPI_COMM_WORLD);
+	
+	auto startcalc = myclock();
 
 	// Partition the space on the first element, then just go recursively as in example
 	for(int n=rank; n<items[0].getMaxCount(capacity); n+=world_size) {
 		knapsack(1, items[0].getValue()*n, items[0].getWeight()*n);
 	}
 
+	auto endcalc = myclock();
+	
 	int globalMaxValue = maxValue;
 	MPI_Reduce(&maxValue, &globalMaxValue, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
-
+	
 	if(rank==0)
 		std::cout << globalMaxValue << std::endl;
+	
+	auto end = myclock();
+	
+	if(PRINT_TIMES)
+		std::cout << "Rank " << rank << ": " << std::endl
+				  << "  " << to_millis(startcalc-begin) << "ms init+map" << std::endl
+				  << "  " << to_millis(endcalc-startcalc) << "ms calc" << std::endl
+				  << "  " << to_millis(end-endcalc) << "ms reduce" << std::endl;
 
 	MPI_Finalize();
 	return 0;

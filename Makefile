@@ -1,5 +1,9 @@
 build:
-	mpic++ main2.cpp -o knapsack
+	mpic++ main.cpp -o knapsack
 
 run:
-	cat input | mpirun -n 4 knapsack
+	cat input | mpirun -n 1 knapsack
+	
+scalingtest:
+	zsh ./scalingtest.sh
+	
