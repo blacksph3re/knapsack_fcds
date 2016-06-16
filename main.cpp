@@ -5,7 +5,7 @@
 #include <vector>
 #include <chrono>
 
-const bool PRINT_TIMES = true;
+const bool PRINT_TIMES = false;
 
 long int to_millis(auto input) {
 	return std::chrono::duration_cast<std::chrono::milliseconds>(input).count();
@@ -33,6 +33,8 @@ public:
 	Item()
 		: i(-1), v(-1), w(-1), density(0)
 		{}
+		
+	bool operator < (const Item& rhs) const {return getDensity() < rhs.getDensity();}
 private:
 	int i;
 	int w;
@@ -45,12 +47,9 @@ bool compare(const Item& lhs, const Item& rhs) {
 }
 
 
-std::vector<Item> items;
-int capacity;
-int itemCount;
-int maxValue = 0;
 
-void readInput() {
+void readInput(std::vector<Item>& items, int& capacity) {
+	int itemCount = 0;
 	scanf("%d %d", &itemCount, &capacity);
 	items.reserve(itemCount);
 	int maxCount = -1;
@@ -65,36 +64,24 @@ void readInput() {
 			maxCountIdx = i;
 		}
 	}
-
-	// Put the greatest item up front
-	iter_swap(items.begin(), items.begin() + maxCountIdx);
 	
 	// Sort by density
-	std::sort(items.begin() + 1, items.end(), compare);
+	std::sort(items.begin(), items.end());
 }
 
-void knapsack(int i, int value, int weight) {
-	// Recursion break condidions:
-	// Either we checked all the items in the sack or there is no more space in the sack
-	if(i >= items.size() || weight == capacity) {
-		if(weight <= capacity && value > maxValue) {
-			maxValue = value;
-		}
-		return;
+int knapsack(int i, int capacity, const std::vector<Item>& items) {
+	if(i >= items.size())
+		return 0;
+	
+	int v, w, r;
+	v = w = r = 0;
+	
+	while(capacity - w >= 0) {
+		r = std::max(r, v + knapsack(i+1, capacity-w, items));
+		w += items[i].getWeight();
+		v += items[i].getValue();
 	}
-
-	// If we exceeded the space already, we don't have to check for new maximum
-	// Also done in for-loop, one check is redundant...
-	if(weight > capacity)
-		return;
-
-	for(int n=0; n<items[i].getMaxCount(capacity); n++) {
-		int nextWeight = weight + items[i].getWeight()*n;
-		// If we exceeded the space already, we don't have to check for new maximum
-		if(weight>capacity)
-			break;
-		knapsack(i+1, value + items[i].getValue()*n, nextWeight);
-	}
+	return r;
 }
 
 int main() {
@@ -108,8 +95,12 @@ int main() {
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
 	// let only root do the input parsing, then bcast it to all other processes
+	std::vector<Item> items;
+	int capacity;
+	
 	if(rank == 0)
-		readInput();
+		readInput(items, capacity);
+	int itemCount = items.size();
 	MPI_Bcast(&capacity, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&itemCount, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	if(rank != 0)
@@ -119,8 +110,10 @@ int main() {
 	auto startcalc = myclock();
 
 	// Partition the space on the first element, then just go recursively as in example
+	int maxValue = 0;
 	for(int n=rank; n<items[0].getMaxCount(capacity); n+=world_size) {
-		knapsack(1, items[0].getValue()*n, items[0].getWeight()*n);
+		maxValue = std::max(maxValue, 
+							items[0].getValue()*n + knapsack(1, capacity - items[0].getWeight()*n, items));
 	}
 
 	auto endcalc = myclock();
