@@ -106,7 +106,13 @@ int main() {
 	auto startcalc = myclock();
 	
 	
-	int splitdepth = 10;
+	int splitdepth = 1;
+	
+	// Move splitdepth elements up front
+	for(int i=0; i<splitdepth; i++) {
+		if(i < items.size()/2)
+			std::iter_swap(items.begin()+i, items.begin() + (items.size()-i-1));
+	}
 	
 	// Partition based on splitdepth dimensions
 	std::vector<int> n;
